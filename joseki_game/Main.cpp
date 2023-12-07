@@ -88,36 +88,37 @@ class Game : public App::Scene
 {
 private:
 	Font font{ 100, Typeface::CJK_Regular_JP };
-		// 2D 物理演算のシミュレーションステップ（秒）
-		static constexpr double StepTime = (1.0 / 200.0);
-		// 2D 物理演算のシミュレーション蓄積時間（秒）
-		double accumulatedTime = 0.0;
-		// 重力加速度 (cm/s^2)
-		static constexpr double Gravity = 980;
-		// 2D 物理演算のワールド
-		P2World world{ Gravity };
-		// [|_|] 地面 (幅 1200 cm の床）
-		P2Body ground;
-		// 物体
-		Array<P2Body> bodies;
+	Font verfont{ 30, Typeface::CJK_Regular_JP };
+	// 2D 物理演算のシミュレーションステップ（秒）
+	static constexpr double StepTime = (1.0 / 200.0);
+	// 2D 物理演算のシミュレーション蓄積時間（秒）
+	double accumulatedTime = 0.0;
+	// 重力加速度 (cm/s^2)
+	static constexpr double Gravity = 980;
+	// 2D 物理演算のワールド
+	P2World world{ Gravity };
+	// [|_|] 地面 (幅 1200 cm の床）
+	P2Body ground;
+	// 物体
+	Array<P2Body> bodies;
 
-		Vec2 summonPos = { 0, -600 };
-		int now_size = size_00;
-		int next_size = size_00;
-		P2Material material{};
-		P2BodyID now_id;
-		P2BodyID next_id;
+	Vec2 summonPos = { 0, -600 };
+	int now_size = size_00;
+	int next_size = size_00;
+	P2Material material{};
+	P2BodyID now_id;
+	P2BodyID next_id;
 
-		std::array<int, 3> start_size{ size_00, size_01, size_02 };
-		bool clicked = false;
+	std::array<int, 3> start_size{ size_00, size_01, size_02 };
+	bool clicked = false;
 
-		int score = 0;
-		bool isGameover = false;
+	int score = 0;
+	bool isGameover = false;
 
-		bool isFocused = false;
+	bool isFocused = false;
 
-		// 2D カメラ
-		Camera2D camera{ Vec2{ 0, -300 }, 1, CameraControl::Keyboard };
+	// 2D カメラ
+	Camera2D camera{ Vec2{ 0, -300 }, 1, CameraControl::None_ };
 public:
 	// コンストラクタ（必ず実装）
 	Game(const InitData& init)
@@ -145,8 +146,6 @@ public:
 	// 更新関数（オプション）
 	void update() override
 	{
-		font(U"Score: " + Format(score)).draw(20, 100, 200, Palette::Black);
-
 		for (accumulatedTime += Scene::DeltaTime(); StepTime <= accumulatedTime; accumulatedTime -= StepTime)
 		{
 			ClearPrint();
@@ -188,15 +187,15 @@ public:
 					}
 					if(size != 0){
 						bodies << world.createCircle(P2Dynamic, circle_01.getCircle().center.lerp(circle_02.getCircle().center, 0.5), size, material);
-						auto temp = bodies.back();
-						Vec2 pos = temp.getPos();
-						//Console << bodies.size();
-						for (auto& body : bodies) {
-							if (body.id() == temp.id() or body.id() == pair.a or body.id() == pair.b) continue;
-							auto dist = pos.distanceFrom(body.getPos()) - size;
-							if (dist <= static_cast<const P2Circle&>(body.shape(0)).getCircle().r + 5)
-								body.setVelocity(pos.lerp(body.getPos(), 1.01));
-						}
+						//auto temp = bodies.back();
+						//Vec2 pos = temp.getPos();
+						////Console << bodies.size();
+						//for (auto& body : bodies) {
+						//	if (body.id() == temp.id() or body.id() == pair.a or body.id() == pair.b) continue;
+						//	auto dist = pos.distanceFrom(body.getPos()) - size;
+						//	//if (dist <= static_cast<const P2Circle&>(body.shape(0)).getCircle().r + 5)
+						//		//body.setVelocity(pos.lerp(body.getPos(), 1.001));
+						//}
 					}
 				}
 			}
@@ -210,6 +209,8 @@ public:
 		{
 			// 2D カメラから Transformer2D を作成する
 			const auto t = camera.createTransformer();
+
+			font(U"Score: " + Format(score)).draw(30, -500, -500, Palette::Black);
 
 			if (isFocused and !clicked and !isGameover) {
 				auto circle = getNowCircle(bodies, now_id);
@@ -246,23 +247,27 @@ public:
 
 			// 地面を描画する
 			ground.draw(Palette::Skyblue);
-
+			RoundRect{ 325, -475, 150, 150, 10 }.drawFrame(1, 0, Palette::Black);
+			font(U"Next").drawAt(20, Vec2{ 400, -500 }, Palette::Black);
+			if (isGameover) {
+				if (SimpleGUI::ButtonAt(U"Restart", Vec2{ 500, 0 })) {
+					changeScene(U"Game", 0.1s);
+				}
+			}
 		}
 
-		RoundRect{ 965, 180, 150, 150, 10 }.drawFrame(1, 0, Palette::Black);
-		font(U"Next").drawAt(20, Vec2{ 1040, 160 }, Palette::Black);
 		// 2D カメラの操作を描画する
 		camera.draw(Palette::Orange);
 		if (isGameover)
 		{
 			Rect{ Point{0, 0}, Scene::Size() }.draw(ColorF(0, 0, 0, 0.2));
 			font(U"GameOver!!\nScore: " + Format(score)).drawAt(100, Scene::CenterF(), Palette::Black);
-			if (SimpleGUI::ButtonAt(U"Restart", Vec2{ 1000, 600 })) {
-				changeScene(U"Game", 0.1s);
-			}
 		}
 		if (MouseL.down() and !isFocused) isFocused = true;
 		if (KeyEscape.down() and isFocused) isFocused = false;
+
+		auto temp = verfont(U"beta_v1.1");
+		temp.draw(Scene::Width() - temp.region().w, Scene::Height() - temp.region().h, Palette::Black);
 	}
 
 	// 描画関数（オプション）
@@ -276,6 +281,7 @@ void Main()
 {
 	// ウィンドウを 1280x720 にリサイズする
 	Window::Resize(1280, 720);
+	Window::SetStyle(WindowStyle::Sizable);
 	Scene::SetBackground(BACKGROUND_COLOR);
 	Window::SetTitle(U"除籍ゲーム");
 	System::SetTerminationTriggers(UserAction::CloseButtonClicked);
