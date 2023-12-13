@@ -1,4 +1,7 @@
 ﻿# include <Siv3D.hpp>
+#include "password.hpp"
+#include "ScoreBoard.hpp"
+#include "version_id.hpp"
 
 constexpr int size_00 = 15;
 constexpr int size_01 = 30;
@@ -81,14 +84,117 @@ P2Body& getNowCircle(Array<P2Body>& bodies, P2BodyID id) {
 	return bodies.back();
 }
 
-using App = SceneManager<String>;
+struct AppData {
+	bool isStartup = true;
+	String version = U"";
+	TextEditState user_name;
+};
+
+using App = SceneManager<String, AppData>;
 
 // タイトルシーン
+class Title : public App::Scene
+{
+private:
+	Font font{80, Typeface::CJK_Regular_JP};
+	Font verfont{ 20, Typeface::CJK_Regular_JP };
+	const URL url = U"https://joseki.ogmgre.com/version/";
+	const HashTable<String, String> headers{};
+	AsyncHTTPTask responce_00;
+	AsyncHTTPTask responce_01;
+	bool responce00done = false;
+public:
+	// コンストラクタ（必ず実装）
+	Title(const InitData& init)
+		: IScene{ init }
+	{
+		responce_00 = SimpleHTTP::GetAsync(this->url + Format(VERSION_ID), this->headers);
+		responce_01 = SimpleHTTP::GetAsync(this->url + U"latest", this->headers);
+	}
+
+	// 更新関数（オプション）
+	void update() override
+	{
+		if (responce_00.isReady()) {
+			if (!(responce_00.isFailed() or responce_00.isEmpty())) {
+				auto data = responce_00.getAsJSON();
+				getData().version = data[U"name"].getString();
+				auto hoge = responce_00.getResponse();
+				responce00done = true;
+			}
+		}
+		if (responce_01.isReady() and responce00done) {
+			if (!(responce_01.isFailed() or responce_01.isEmpty())) {
+				int latest_version_id;
+				String latest_version;
+				auto data = responce_01.getAsJSON();
+				latest_version_id = data[U"version_id"].get<int>();
+				latest_version = data[U"name"].getString();
+				if (getData().isStartup and latest_version_id != VERSION_ID) {
+					const MessageBoxResult result = System::MessageBoxYesNo(U"最新バージョンのリリースがあります。\n{} -> {}\nブラウザを開きますか？"_fmt(getData().version, latest_version));
+					if (result == MessageBoxResult::Yes) {
+						System::LaunchBrowser(U"https://github.com/Ogame3334/joseki_game/releases/latest");
+					}
+					getData().isStartup = false;
+				}
+				auto hoge = responce_01.getResponse();
+			}
+		}
+		if (SimpleGUI::ButtonAt(U"Play", Scene::CenterF() + Vec2{ 0, 100 })) {
+			changeScene(U"Game", 0.1s);
+		}
+		if (SimpleGUI::ButtonAt(U"ランキング", Scene::Size() + Vec2{ -100, -50 })) {
+			changeScene(U"Lanking", 0.1s);
+		}
+	}
+
+	// 描画関数（オプション）
+	void draw() const override
+	{
+		font(U"除籍ゲーム").drawAt(Scene::CenterF() + Vec2{0, -200}, Palette::Black);
+		auto temp = verfont(getData().version);
+		temp.draw(0, Scene::Height() - temp.region().h, Palette::Black);
+	}
+};
+
+class Lanking : public App::Scene
+{
+private:
+	Font font{ 50, Typeface::CJK_Regular_JP };
+	Font verfont{ 20, Typeface::CJK_Regular_JP };
+	ScoreBoard score_board{ Scene::Center() - Point{400, 250}, Size{800, 500}, 6 };
+public:
+	// コンストラクタ（必ず実装）
+	Lanking(const InitData& init)
+		: IScene{ init }
+	{
+		
+	}
+
+	// 更新関数（オプション）
+	void update() override
+	{
+		this->score_board.update();
+		if (SimpleGUI::ButtonAt(U"タイトルへ", Scene::Size() + Vec2{-100, -50})) {
+			changeScene(U"Title", 0.1s);
+		}
+	}
+
+	// 描画関数（オプション）
+	void draw() const override
+	{
+		this->score_board.draw();
+		font(U"ランキング").drawAt(Scene::CenterF() + Vec2{ 0, -300 }, Palette::Black);
+		auto temp = verfont(getData().version);
+		temp.draw(0, Scene::Height() - temp.region().h, Palette::Black);
+	}
+};
+
 class Game : public App::Scene
 {
 private:
 	Font font{ 100, Typeface::CJK_Regular_JP };
-	Font verfont{ 30, Typeface::CJK_Regular_JP };
+	Font verfont{ 20, Typeface::CJK_Regular_JP };
 	// 2D 物理演算のシミュレーションステップ（秒）
 	static constexpr double StepTime = (1.0 / 200.0);
 	// 2D 物理演算のシミュレーション蓄積時間（秒）
@@ -115,7 +221,14 @@ private:
 	int score = 0;
 	bool isGameover = false;
 
-	bool isFocused = false;
+	bool isFocused = true;
+
+	const URL url = U"https://joseki.ogmgre.com/score/add";
+	const HashTable<String, String> headers{ {U"pass", Unicode::Widen(HEADER_PASS)}};
+	AsyncHTTPTask responce;
+	bool isSended = false;
+	bool isSendComplete = false;
+	bool isSendFailed = false;
 
 	// 2D カメラ
 	Camera2D camera{ Vec2{ 0, -300 }, 1, CameraControl::None_ };
@@ -187,15 +300,6 @@ public:
 					}
 					if(size != 0){
 						bodies << world.createCircle(P2Dynamic, circle_01.getCircle().center.lerp(circle_02.getCircle().center, 0.5), size, material);
-						//auto temp = bodies.back();
-						//Vec2 pos = temp.getPos();
-						////Console << bodies.size();
-						//for (auto& body : bodies) {
-						//	if (body.id() == temp.id() or body.id() == pair.a or body.id() == pair.b) continue;
-						//	auto dist = pos.distanceFrom(body.getPos()) - size;
-						//	//if (dist <= static_cast<const P2Circle&>(body.shape(0)).getCircle().r + 5)
-						//		//body.setVelocity(pos.lerp(body.getPos(), 1.001));
-						//}
 					}
 				}
 			}
@@ -247,13 +351,9 @@ public:
 
 			// 地面を描画する
 			ground.draw(Palette::Skyblue);
+			Line{ {-Width / 2, -500}, {Width / 2, -500} }.draw(LineStyle::SquareDot, 4, Palette::Lightgray);
 			RoundRect{ 325, -475, 150, 150, 10 }.drawFrame(1, 0, Palette::Black);
 			font(U"Next").drawAt(20, Vec2{ 400, -500 }, Palette::Black);
-			if (isGameover) {
-				if (SimpleGUI::ButtonAt(U"Restart", Vec2{ 500, 0 })) {
-					changeScene(U"Game", 0.1s);
-				}
-			}
 		}
 
 		// 2D カメラの操作を描画する
@@ -262,12 +362,54 @@ public:
 		{
 			Rect{ Point{0, 0}, Scene::Size() }.draw(ColorF(0, 0, 0, 0.2));
 			font(U"GameOver!!\nScore: " + Format(score)).drawAt(100, Scene::CenterF(), Palette::Black);
+			if (SimpleGUI::ButtonAt(U"もう一度", Scene::CenterF() + Vec2{ 0, 200 })) {
+				changeScene(U"Game", 0.1s);
+			}
+			if (SimpleGUI::ButtonAt(U"タイトルに戻る", Scene::CenterF() + Vec2{ 0, 250 })) {
+				changeScene(U"Title", 0.1s);
+			}
+			verfont(U"ランキングに追加").drawAt(Scene::CenterF() + Vec2{ 400, 100 }, Palette::Black);
+			SimpleGUI::TextBoxAt(getData().user_name, Scene::CenterF() + Vec2{ 400, 150 });
+			if (SimpleGUI::ButtonAt(U"送信", Scene::CenterF() + Vec2{ 400, 200 }, unspecified, (!this->isSended) or this->isSendFailed)) {
+				String user_name = getData().user_name.text;
+				this->isSended = true;
+				const std::string data = JSON
+				{
+					{U"version_id", VERSION_ID},
+					{U"name" , getData().user_name.text},
+					{U"score" , this->score},
+				}.formatUTF8();
+				this->responce = SimpleHTTP::PostAsync(this->url, this->headers, data.data(), data.size());
+			}
+			if (this->isSended) {
+				if (this->responce.isReady()) {
+					if (this->responce.isFailed()) {
+						this->isSendFailed = true;
+					}
+					else {
+						auto data = responce.getAsJSON();
+						String state = data[U"state"].getString();
+						if (state == U"ok") this->isSendComplete = true;
+						else this->isSendFailed = true;
+					}
+				}
+				verfont(this->isSendComplete ? U"送信完了" : this->isSendFailed ? U"送信失敗" : U"送信中...").drawAt(Scene::CenterF() + Vec2{400, 250}, Palette::Black);
+			}
 		}
-		if (MouseL.down() and !isFocused) isFocused = true;
-		if (KeyEscape.down() and isFocused) isFocused = false;
+		if (KeyEscape.down()) isFocused ^= 1;
 
-		auto temp = verfont(U"beta_v1.1");
-		temp.draw(Scene::Width() - temp.region().w, Scene::Height() - temp.region().h, Palette::Black);
+		auto temp = verfont(getData().version);
+		temp.draw(0, Scene::Height() - temp.region().h, Palette::Black);
+
+		if (!isFocused) {
+			Rect{ Point{0, 0}, Scene::Size() }.draw(ColorF(0, 0, 0, 0.2));
+			if (SimpleGUI::ButtonAt(U"ゲームに戻る", Scene::CenterF() + Vec2{0, -50})) {
+				this->isFocused = true;
+			}
+			if (SimpleGUI::ButtonAt(U"タイトルに戻る", Scene::CenterF() + Vec2{ 0, 50 })) {
+				this->changeScene(U"Title", 0.1s);
+			}
+		}
 	}
 
 	// 描画関数（オプション）
@@ -290,8 +432,10 @@ void Main()
 	App manager;
 
 	// タイトルシーン（名前は "Title"）を登録
+	manager.add<Title>(U"Title");
+	manager.add<Lanking>(U"Lanking");
 	manager.add<Game>(U"Game");
-	manager.init(U"Game", 0.1s);
+	manager.init(U"Title", 0.1s);
 
 	while (System::Update())
 	{
