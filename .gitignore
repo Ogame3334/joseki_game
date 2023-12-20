@@ -366,3 +366,4 @@ FodyWeavers.xsd
 *.vcxproj
 *.vcxproj.filters
 password.hpp
+joseki_game/App/
